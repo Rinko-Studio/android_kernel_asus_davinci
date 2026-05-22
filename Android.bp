@@ -1,4 +1,5 @@
-soong_namespace {}
+soong_namespace {
+}
 
 cc_binary_host {
     name: "unifdef",

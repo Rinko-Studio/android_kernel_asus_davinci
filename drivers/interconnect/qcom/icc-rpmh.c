@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/clk.h>
@@ -14,7 +14,9 @@
 #include <soc/qcom/socinfo.h>
 
 #include "bcm-voter.h"
+#ifdef CONFIG_INTERCONNECT_QCOM_DEBUG
 #include "icc-debug.h"
+#endif
 #include "icc-rpmh.h"
 #include "qnoc-qos.h"
 
@@ -322,7 +324,8 @@ static struct regmap *qcom_icc_rpmh_map(struct platform_device *pdev,
 
 static bool is_voter_disabled(char *voter)
 {
-	if ((strnstr(voter, "disp", strlen(voter)) && socinfo_get_part_info(PART_DISPLAY)) ||
+	if ((!strcmp(voter, "disp") && socinfo_get_part_info(PART_DISPLAY)) ||
+	    (!strcmp(voter, "disp2") && socinfo_get_part_info(PART_DISPLAY1)) ||
 	    (strnstr(voter, "cam", strlen(voter)) && socinfo_get_part_info(PART_CAMERA)))
 		return true;
 
@@ -356,7 +359,12 @@ static int qcom_icc_init_disabled_parts(struct qcom_icc_provider *qp)
 				if (!qn)
 					continue;
 
-				if (strnstr(qn->name, voter_name, strlen(qn->name)))
+				/*
+				 * Find the ICC node to be disabled by comparing voter_name in
+				 * node name string, adjust the start position accordingly
+				 */
+				if (!strcmp(qn->name + (strlen(qn->name) - strlen(voter_name)),
+					    voter_name))
 					qn->disabled = true;
 			}
 		}
@@ -486,9 +494,11 @@ int qcom_icc_rpmh_probe(struct platform_device *pdev)
 
 	provider->set = qcom_icc_set;
 	provider->aggregate = qcom_icc_aggregate;
+
 #ifdef CONFIG_INTERCONNECT_QCOM_DEBUG
 	qcom_icc_debug_register(provider);
 #endif
+
 	mutex_lock(&probe_list_lock);
 	list_add_tail(&qp->probe_list, &qnoc_probe_list);
 	mutex_unlock(&probe_list_lock);
@@ -514,9 +524,11 @@ int qcom_icc_rpmh_remove(struct platform_device *pdev)
 	struct qcom_icc_provider *qp = platform_get_drvdata(pdev);
 	struct icc_provider *provider = &qp->provider;
 	struct icc_node *n;
+
 #ifdef CONFIG_INTERCONNECT_QCOM_DEBUG
 	qcom_icc_debug_unregister(provider);
-#endif	
+#endif
+
 	list_for_each_entry(n, &provider->nodes, node_list) {
 		icc_node_del(n);
 		icc_node_destroy(n->id);
